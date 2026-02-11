@@ -17,6 +17,7 @@ import {
   INTERNAL_SERVER_ERROR,
   LEGACY_BITSTREAM_MODULE_PATH,
   PROFILE_MODULE_PATH,
+  RAG_CHATBOT_MODULE_PATH,
   REGISTER_PATH,
   REQUEST_COPY_MODULE_PATH,
   WORKFLOW_ITEM_MODULE_PATH,
@@ -242,6 +243,14 @@ export const APP_ROUTES: Route[] = [
         path: REQUEST_COPY_MODULE_PATH,
         loadChildren: () => import('./request-copy/request-copy-routes').then((m) => m.ROUTES),
         canActivate: [endUserAgreementCurrentUserGuard],
+      },
+      {
+        path: RAG_CHATBOT_MODULE_PATH,
+        loadChildren: () => import('./rag-chatbot/rag-chatbot.module').then((m) => m.RagChatbotModule),
+        data: {
+          title: 'rag-chatbot.page.title',
+          showBreadcrumbs: true
+        }
       },
       {
         path: FORBIDDEN_PATH,

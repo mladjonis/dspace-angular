@@ -162,3 +162,4 @@ export function getEditItemPageRoute() {
 }
 export const CORRECTION_TYPE_PATH = 'corrections';
 
+export const RAG_CHATBOT_MODULE_PATH = 'chatbot';
