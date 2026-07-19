@@ -2,8 +2,9 @@ import { Component, OnInit, OnDestroy, ViewChild, ElementRef, AfterViewChecked, 
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { RagChatbotService } from './services/rag-chatbot.service';
+import { ApiChatMessage } from './models/chat-request.model';
 import { ChatMessage } from './models/chat-message.model';
-import { DocumentResult } from './models/chat-response.model';
+import { ChatResponse, DocumentResult } from './models/chat-response.model';
 
 @Component({
   selector: 'ds-rag-chatbot',
@@ -24,6 +25,8 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
   isLoading = false;
 
   isServiceHealthy = true;
+
+  isServiceDegraded = false;
 
   serviceError: string;
 
@@ -55,7 +58,7 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
 
   private scrollToBottom(): void {
     if (this.messagesContainer) {
-      this.messagesContainer.nativeElement.scrollTop = 
+      this.messagesContainer.nativeElement.scrollTop =
         this.messagesContainer.nativeElement.scrollHeight;
     }
   }
@@ -69,13 +72,18 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response) => {
-          this.isServiceHealthy = response.status === 'healthy';
+          this.isServiceHealthy =
+            response.status === 'healthy' || response.status === 'degraded';
+          this.isServiceDegraded = response.status === 'degraded';
           if (!this.isServiceHealthy) {
             this.serviceError = 'RAG Chatbot service is not available';
+          } else if (this.isServiceDegraded) {
+            this.serviceError = 'RAG Chatbot service is running in degraded mode';
           }
         },
         error: (error) => {
           this.isServiceHealthy = false;
+          this.isServiceDegraded = false;
           this.serviceError = 'Unable to connect to RAG Chatbot service';
           console.error('Health check failed:', error);
         }
@@ -85,7 +93,6 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
   private addWelcomeMessage(): void {
     const welcomeMessage: ChatMessage = {
       id: this.generateMessageId(),
-      //TODO: translate content json5
       content: 'Hello! I\'m your DSpace AI assistant. I can help you search and explore documents in the repository using natural language. Try asking me questions like:\n\n' +
         '• "Find papers about machine learning"\n' +
         '• "What documents discuss climate change?"\n' +
@@ -93,9 +100,24 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
         '• "Papers about renewable energy from 2023"\n\n' +
         'What would you like to know?',
       type: 'bot',
-      timestamp: new Date()
+      timestamp: new Date(),
+      isWelcome: true
     };
     this.messages.push(welcomeMessage);
+  }
+
+  buildApiMessages(): ApiChatMessage[] {
+    return this.messages
+      .filter(m =>
+        !m.loading &&
+        !m.error &&
+        !m.isWelcome &&
+        (m.type === 'user' || m.type === 'bot')
+      )
+      .map(m => ({
+        role: m.type === 'user' ? 'user' as const : 'assistant' as const,
+        content: m.content
+      }));
   }
 
   sendMessage(): void {
@@ -117,7 +139,7 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
 
     const loadingMessage: ChatMessage = {
       id: this.generateMessageId(),
-      content: 'Searching repository...', //TODO: translate, json5
+      content: 'Searching repository...',
       type: 'bot',
       timestamp: new Date(),
       loading: true
@@ -127,47 +149,53 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
 
     this.isLoading = true;
 
-    this.ragChatbotService.chat(query)
+    this.ragChatbotService.chatWithHistory(this.buildApiMessages())
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: (response) => {
-          this.messages = this.messages.filter(m => !m.loading);
-
-          const botMessage: ChatMessage = {
-            id: this.generateMessageId(),
-            content: response.response,
-            type: 'bot',
-            timestamp: new Date(),
-            documents: response.documents,
-            numDocsFound: response.pagination?.total_results || response.num_docs_found,
-            pagination: response.pagination,
-            originalQuery: query
-          };
-          this.messages.push(botMessage);
-          this.shouldScrollToBottom = true;
-          this.isLoading = false;
-          
-          this.cdr.detectChanges();
-        },
-        error: (error) => {
-          console.error('Chat error:', error);
-          
-          this.messages = this.messages.filter(m => !m.loading);
-
-          const errorMessage: ChatMessage = {
-            id: this.generateMessageId(),
-            content: 'Sorry, I encountered an error processing your request. Please try again.',
-            type: 'bot',
-            timestamp: new Date(),
-            error: error.error?.error || error.message
-          };
-          this.messages.push(errorMessage);
-          this.shouldScrollToBottom = true;
-          this.isLoading = false;
-          
-          this.cdr.detectChanges();
-        }
+        next: (response) => this.handleChatResponse(response, query),
+        error: (error) => this.handleChatError(error)
       });
+  }
+
+  private handleChatResponse(response: ChatResponse, originalQuery: string): void {
+    this.messages = this.messages.filter(m => !m.loading);
+
+    const botMessage: ChatMessage = {
+      id: this.generateMessageId(),
+      content: response.response,
+      type: 'bot',
+      timestamp: new Date(),
+      documents: response.documents,
+      citations: response.citations,
+      numDocsFound: response.pagination?.total_results ?? response.num_docs_found,
+      pagination: response.pagination,
+      originalQuery,
+      noAnswer: response.no_answer === true
+    };
+    this.messages.push(botMessage);
+    this.shouldScrollToBottom = true;
+    this.isLoading = false;
+
+    this.cdr.detectChanges();
+  }
+
+  private handleChatError(error: any): void {
+    console.error('Chat error:', error);
+
+    this.messages = this.messages.filter(m => !m.loading);
+
+    const errorMessage: ChatMessage = {
+      id: this.generateMessageId(),
+      content: 'Sorry, I encountered an error processing your request. Please try again.',
+      type: 'bot',
+      timestamp: new Date(),
+      error: error.error?.error || error.message
+    };
+    this.messages.push(errorMessage);
+    this.shouldScrollToBottom = true;
+    this.isLoading = false;
+
+    this.cdr.detectChanges();
   }
 
   loadMoreDocuments(message: ChatMessage): void {
@@ -175,11 +203,19 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
       return;
     }
 
+    if (!message.originalQuery) {
+      return;
+    }
+
     const nextPage = message.pagination.page + 1;
     message.loadingMore = true;
     this.cdr.detectChanges();
 
-    this.ragChatbotService.chat(message.originalQuery, nextPage, message.pagination.page_size)
+    this.ragChatbotService.chatWithHistory(
+      [{ role: 'user', content: message.originalQuery }],
+      nextPage,
+      message.pagination.page_size
+    )
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response) => {
@@ -221,13 +257,29 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
     this.selectedDocument = null;
   }
 
+  viewCitationDocument(message: ChatMessage, documentIndex: number): void {
+    const doc = this.getDocumentByCitationIndex(message, documentIndex);
+    if (doc) {
+      this.viewDocument(doc);
+    }
+  }
+
+  getDocumentByCitationIndex(message: ChatMessage, documentIndex: number): DocumentResult | null {
+    if (!message.documents || documentIndex < 1) {
+      return null;
+    }
+    return message.documents[documentIndex - 1] ?? null;
+  }
+
   navigateToItem(solrId: string): void {
-    // Extract UUID from solr_id (format: Item-UUID or similar)
     const uuid = solrId.replace(/^Item-/, '');
     window.open(`/items/${uuid}`, '_blank');
   }
 
-  getMetadataValue(metadata: any, key: string): string {
+  getMetadataValue(metadata: Record<string, unknown> | undefined, key: string): string {
+    if (!metadata) {
+      return 'N/A';
+    }
     const value = metadata[key];
     if (!value) {
       return 'N/A';
@@ -238,6 +290,34 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
     return String(value);
   }
 
+  getDocumentTitle(doc: DocumentResult): string {
+    const title = this.getMetadataValue(doc.metadata, 'dc_title');
+    return title !== 'N/A' ? title : 'Untitled Document';
+  }
+
+  getDocumentAbstract(doc: DocumentResult): string | null {
+    const abstract = this.getMetadataValue(doc.metadata, 'dc_description_abstract');
+    return abstract !== 'N/A' ? abstract : null;
+  }
+
+  getDocumentAuthor(doc: DocumentResult): string | null {
+    const value = this.getMetadataValue(doc.metadata, 'author');
+    return value !== 'N/A' ? value : null;
+  }
+
+  getDocumentDate(doc: DocumentResult): string | null {
+    const value = this.getMetadataValue(doc.metadata, 'dc_date_issued_dt');
+    return value !== 'N/A' ? value : null;
+  }
+
+  formatTotalResults(message: ChatMessage): string {
+    const total = message.numDocsFound ?? 0;
+    if (message.pagination?.total_results_is_approximate) {
+      return `~${total}`;
+    }
+    return String(total);
+  }
+
   formatTimestamp(timestamp: Date): string {
     return new Date(timestamp).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -246,10 +326,9 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
   }
 
   getTruncatedContent(content: string, maxLength: number = 200): string {
-    if (content.length <= maxLength) {
+    if (!content || content.length <= maxLength) {
       return content;
     }
     return content.substring(0, maxLength) + '...';
   }
 }
-

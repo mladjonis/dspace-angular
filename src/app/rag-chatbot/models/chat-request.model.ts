@@ -1,8 +1,13 @@
+export interface ApiChatMessage {
+  role: 'system' | 'user' | 'assistant';
+
+  content: string;
+}
+
 export interface ChatRequest {
-  query: string;
+  messages: ApiChatMessage[];
 
   page?: number;
 
   page_size?: number;
 }
-

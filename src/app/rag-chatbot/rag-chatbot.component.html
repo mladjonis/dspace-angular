@@ -17,15 +17,19 @@
           <i class="fas fa-trash"></i>
         </button>
         <span class="status-indicator" 
-              [ngClass]="isServiceHealthy ? 'status-healthy' : 'status-unhealthy'"
-              [title]="isServiceHealthy ? 'Service online' : serviceError">
+              [ngClass]="{
+                'status-healthy': isServiceHealthy && !isServiceDegraded,
+                'status-degraded': isServiceDegraded,
+                'status-unhealthy': !isServiceHealthy
+              }"
+              [title]="isServiceHealthy ? (isServiceDegraded ? serviceError : 'Service online') : serviceError">
           <i class="fas fa-circle"></i>
         </span>
       </div>
     </div>
   </div>
 
-  <div class="alert alert-warning" *ngIf="!isServiceHealthy">
+  <div class="alert alert-warning" *ngIf="!isServiceHealthy || isServiceDegraded">
     <i class="fas fa-exclamation-triangle"></i>
     {{ serviceError }}
   </div>
@@ -37,7 +41,7 @@
              class="message-wrapper"
              [ngClass]="'message-' + message.type">
           
-          <div class="message-bubble">
+          <div class="message-bubble" [class.no-answer-message]="message.noAnswer">
             <div class="message-header">
               <span class="message-sender">
                 <i class="fas" [ngClass]="message.type === 'user' ? 'fa-user' : 'fa-robot'"></i>
@@ -56,6 +60,13 @@
 
               <div *ngIf="!message.loading" [innerHTML]="message.content | safe:'html'" class="message-text"></div>
 
+              <div *ngIf="message.noAnswer && !message.loading" class="no-answer-hint">
+                <small>
+                  <i class="fas fa-info-circle"></i>
+                  Low confidence match — results may not fully answer your question.
+                </small>
+              </div>
+
               <div *ngIf="message.error" class="message-error">
                 <small class="text-danger">
                   <i class="fas fa-exclamation-circle"></i>
@@ -63,12 +74,36 @@
                 </small>
               </div>
 
+              <div *ngIf="message.citations && message.citations.length > 0" class="citations-block">
+                <div class="citations-header">
+                  <i class="fas fa-quote-left"></i>
+                  <strong>Citations</strong>
+                </div>
+                <ul class="citations-list">
+                  <li *ngFor="let citation of message.citations" class="citation-item">
+                    <button type="button"
+                            class="btn btn-link btn-sm citation-doc-link"
+                            *ngIf="getDocumentByCitationIndex(message, citation.document_index)"
+                            (click)="viewCitationDocument(message, citation.document_index)">
+                      [{{ citation.document_index }}] {{ getDocumentTitle(getDocumentByCitationIndex(message, citation.document_index)!) }}
+                    </button>
+                    <span *ngIf="!getDocumentByCitationIndex(message, citation.document_index)" class="citation-index">
+                      [{{ citation.document_index }}]
+                    </span>
+                    <span class="citation-quote">"{{ citation.quote }}"</span>
+                    <span *ngIf="citation.verified === true" class="citation-verified" title="Verified against source">
+                      <i class="fas fa-check-circle"></i>
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
               <div *ngIf="message.documents && message.documents.length > 0 && showDocuments" 
                    class="documents-summary">
                 <div class="documents-header">
                   <i class="fas fa-file-alt"></i>
                   <strong>
-                    Showing {{ message.documents.length }} of {{ message.numDocsFound }} document(s)
+                    Showing {{ message.documents.length }} of {{ formatTotalResults(message) }} document(s)
                   </strong>
                 </div>
                 
@@ -79,23 +114,22 @@
                     <div class="document-header">
                       <div class="document-title">
                         <i class="fas fa-file-text"></i>
-                        <!-- {{ doc.title || 'Untitled Document' }} -->
-                        {{ doc.metadata.dc_title || 'Untitled Document' }}
+                        {{ getDocumentTitle(doc) }}
                       </div>
                     </div>
                     
-                    <div class="document-description" *ngIf="doc.description">
-                      {{ getTruncatedContent(doc.description, 150) }}
+                    <div class="document-description" *ngIf="getDocumentAbstract(doc) as abstract">
+                      {{ getTruncatedContent(abstract, 150) }}
                     </div>
                     
                     <div class="document-metadata" *ngIf="doc.metadata">
-                      <span class="metadata-item" *ngIf="doc.metadata['dc.creator']">
+                      <span class="metadata-item" *ngIf="getDocumentAuthor(doc) as author">
                         <i class="fas fa-user"></i>
-                        {{ getMetadataValue(doc.metadata, 'dc.creator') }}
+                        {{ author }}
                       </span>
-                      <span class="metadata-item" *ngIf="doc.metadata['dc.date.issued']">
+                      <span class="metadata-item" *ngIf="getDocumentDate(doc) as date">
                         <i class="fas fa-calendar"></i>
-                        {{ getMetadataValue(doc.metadata, 'dc.date.issued') }}
+                        {{ date }}
                       </span>
                       <span class="metadata-item" *ngIf="doc.num_chunks">
                         <i class="fas fa-layer-group"></i>
@@ -179,7 +213,7 @@
       <div class="modal-header">
         <h5 class="modal-title">
           <i class="fas fa-file-alt"></i>
-          {{ selectedDocument.title || 'Document Details' }}
+          {{ getDocumentTitle(selectedDocument) }}
         </h5>
         <button type="button" 
                 class="btn-close" 
@@ -187,14 +221,9 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="mb-3" *ngIf="selectedDocument.description">
-          <h6><i class="fas fa-align-left"></i> Description</h6>
-          <p>{{ selectedDocument.description }}</p>
-        </div>
-
-        <div class="mb-3" *ngIf="selectedDocument.fulltext_preview">
-          <h6><i class="fas fa-file-text"></i> Full Text Preview</h6>
-          <div class="fulltext-preview">{{ selectedDocument.fulltext_preview }}</div>
+        <div class="mb-3" *ngIf="getDocumentAbstract(selectedDocument) as abstract">
+          <h6><i class="fas fa-align-left"></i> Abstract</h6>
+          <p>{{ abstract }}</p>
         </div>
 
         <div class="mb-3" *ngIf="selectedDocument.content">
@@ -233,4 +262,3 @@
     </div>
   </div>
 </div>
-

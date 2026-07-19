@@ -1,4 +1,4 @@
-import { DocumentResult, PaginationInfo } from './chat-response.model';
+import { Citation, DocumentResult, PaginationInfo } from './chat-response.model';
 
 export interface ChatMessage {
   id: string;
@@ -11,6 +11,8 @@ export interface ChatMessage {
 
   documents?: DocumentResult[];
 
+  citations?: Citation[];
+
   loading?: boolean;
 
   error?: string;
@@ -22,4 +24,8 @@ export interface ChatMessage {
   originalQuery?: string;
 
   loadingMore?: boolean;
+
+  noAnswer?: boolean;
+
+  isWelcome?: boolean;
 }

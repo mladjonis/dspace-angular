@@ -1,3 +1,11 @@
+export interface Citation {
+  document_index: number;
+
+  quote: string;
+
+  verified?: boolean;
+}
+
 export interface ChatResponse {
   success: boolean;
 
@@ -11,25 +19,25 @@ export interface ChatResponse {
 
   pagination: PaginationInfo;
 
+  citations?: Citation[];
+
+  no_answer?: boolean;
+
   error?: string;
 }
 
 export interface DocumentResult {
   content: string;
 
-  title?: string;
-
-  description?: string;
-
-  fulltext_preview?: string;
-
   metadata: { [key: string]: any };
 
-  distance: number;
+  similarity_score: number;
 
   solr_id: string;
 
   num_chunks?: number;
+
+  total_chunks_expected?: number;
 }
 
 export interface PaginationInfo {
@@ -40,5 +48,6 @@ export interface PaginationInfo {
   total_results: number;
 
   has_more: boolean;
-}
 
+  total_results_is_approximate?: boolean;
+}

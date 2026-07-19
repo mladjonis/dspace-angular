@@ -1,9 +1,20 @@
 import { Injectable, Inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ChatRequest } from '../models/chat-request.model';
+import { ApiChatMessage, ChatRequest } from '../models/chat-request.model';
 import { ChatResponse } from '../models/chat-response.model';
 import { APP_CONFIG, AppConfig } from '../../../config/app-config.interface';
+
+const DEFAULT_CHAT_PAGE = 1;
+const DEFAULT_CHAT_PAGE_SIZE = 10;
+
+export interface RagHealthResponse {
+  status: 'healthy' | 'degraded' | 'unhealthy' | 'error';
+
+  service: string;
+
+  error?: string;
+}
 
 @Injectable({
   providedIn: 'root'
@@ -18,22 +29,28 @@ export class RagChatbotService {
     this.apiUrl = `${this.appConfig.rest.baseUrl}/api/rag`;
   }
 
-  chat(query: string, page?: number, pageSize?: number): Observable<ChatResponse> {
+  chatWithHistory(
+    messages: ApiChatMessage[],
+    page?: number,
+    pageSize?: number
+  ): Observable<ChatResponse> {
     const request: ChatRequest = {
-      query,
-      page,
-      page_size: pageSize
+      messages,
+      page: page ?? DEFAULT_CHAT_PAGE,
+      page_size: pageSize ?? DEFAULT_CHAT_PAGE_SIZE,
     };
+    return this.postChat(request);
+  }
 
+  healthCheck(): Observable<RagHealthResponse> {
+    return this.http.get<RagHealthResponse>(`${this.apiUrl}/health`);
+  }
+
+  private postChat(request: ChatRequest): Observable<ChatResponse> {
     return this.http.post<ChatResponse>(`${this.apiUrl}/chat`, request, {
       headers: new HttpHeaders({
         'Content-Type': 'application/json'
       })
     });
   }
-
-  healthCheck(): Observable<{ status: string; service: string }> {
-    return this.http.get<{ status: string; service: string }>(`${this.apiUrl}/health`);
-  }
 }
-
