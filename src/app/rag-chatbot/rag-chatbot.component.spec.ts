@@ -121,6 +121,23 @@ describe('RagChatbotComponent', () => {
     expect(botMessage.noAnswer).toBe(false);
   });
 
+  it('should retain the backend standalone query for loading later pages', () => {
+    mockRagChatbotService.chatWithHistory.and.returnValue(of({
+      ...mockResponse,
+      query: 'standalone dengue vaccine query'
+    }));
+    mockRagChatbotService.healthCheck.and.returnValue(
+      of({ status: 'healthy', service: 'RAG Chatbot' })
+    );
+
+    fixture.detectChanges();
+    component.userInput = 'What about that paper?';
+    component.sendMessage();
+
+    const botMessage = component.messages[component.messages.length - 1];
+    expect(botMessage.originalQuery).toBe('standalone dengue vaccine query');
+  });
+
   it('should handle error when sending message', () => {
     mockRagChatbotService.chatWithHistory.and.returnValue(
       throwError(() => new Error('Test error'))
@@ -201,6 +218,8 @@ describe('RagChatbotComponent', () => {
       timestamp: new Date(),
       originalQuery: 'test query',
       documents: mockResponse.documents,
+      numDocsFound: 2,
+      loadingMore: false,
       pagination: {
         page: 1,
         page_size: 10,
@@ -219,5 +238,154 @@ describe('RagChatbotComponent', () => {
     );
     expect(message.documents?.length).toBe(2);
     expect(message.pagination?.page).toBe(2);
+    expect(message.numDocsFound).toBe(2);
+    expect(message.loadingMore).toBe(false);
+  });
+
+  it('should merge repeated solr_ids while preserving distinct Item ids with identical metadata', () => {
+    mockRagChatbotService.chatWithHistory.and.returnValue(of({
+      ...mockResponse,
+      documents: [
+        {
+          content: 'duplicate content',
+          metadata: { dc_title: 'Duplicate Paper' },
+          similarity_score: 0.95,
+          solr_id: 'Item-abc'
+        },
+        {
+          content: 'new content',
+          metadata: { dc_title: 'Test Paper', author: ['Author'] },
+          similarity_score: 0.8,
+          solr_id: 'Item-def'
+        }
+      ],
+      num_docs_found: 99,
+      pagination: {
+        page: 2,
+        page_size: 10,
+        total_results: 3,
+        has_more: true,
+        total_results_is_approximate: true
+      }
+    }));
+
+    const message = {
+      id: 'bot-1',
+      content: 'Results',
+      type: 'bot' as const,
+      timestamp: new Date(),
+      originalQuery: 'test query',
+      documents: mockResponse.documents,
+      numDocsFound: 2,
+      loadingMore: false,
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total_results: 2,
+        has_more: true,
+        total_results_is_approximate: false
+      }
+    };
+
+    component.loadMoreDocuments(message);
+
+    expect(message.documents?.map(document => document.solr_id)).toEqual([
+      'Item-abc',
+      'Item-def'
+    ]);
+    expect(message.documents?.[0].content).toBe('doc content');
+    expect(message.pagination?.total_results_is_approximate).toBe(true);
+    expect(message.pagination?.has_more).toBe(true);
+    expect(message.numDocsFound).toBe(3);
+    expect(message.loadingMore).toBe(false);
+  });
+
+  it('should clear loadingMore when loading another page fails', () => {
+    mockRagChatbotService.chatWithHistory.and.returnValue(
+      throwError(() => new Error('Load more failed'))
+    );
+
+    const message = {
+      id: 'bot-1',
+      content: 'Results',
+      type: 'bot' as const,
+      timestamp: new Date(),
+      originalQuery: 'test query',
+      documents: mockResponse.documents,
+      loadingMore: false,
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total_results: 2,
+        has_more: true,
+        total_results_is_approximate: false
+      }
+    };
+
+    component.loadMoreDocuments(message);
+
+    expect(message.loadingMore).toBe(false);
+  });
+
+  it('should hide approximate totals and remaining-result arithmetic', () => {
+    const message = {
+      id: 'bot-1',
+      content: 'Results',
+      type: 'bot' as const,
+      timestamp: new Date(),
+      documents: mockResponse.documents,
+      numDocsFound: 160,
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total_results: 160,
+        has_more: true,
+        total_results_is_approximate: true
+      }
+    };
+
+    expect(component.getDocumentsSummary(message)).toBe('Showing 1 relevant results');
+    expect(component.getLoadMoreLabel(message)).toBe('Load More');
+  });
+
+  it('should show totals only when marked exact and keep them consistent with shown results', () => {
+    const message = {
+      id: 'bot-1',
+      content: 'Results',
+      type: 'bot' as const,
+      timestamp: new Date(),
+      documents: mockResponse.documents,
+      numDocsFound: 99,
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total_results: 0,
+        has_more: true,
+        total_results_is_approximate: false
+      }
+    };
+
+    expect(component.getDocumentsSummary(message)).toBe('Showing 1 of 1 results');
+    expect(component.getLoadMoreLabel(message)).toBe('Load More (0 remaining)');
+  });
+
+  it('should hide totals when the backend does not mark them exact', () => {
+    const message = {
+      id: 'bot-1',
+      content: 'Results',
+      type: 'bot' as const,
+      timestamp: new Date(),
+      documents: mockResponse.documents,
+      numDocsFound: 160,
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total_results: 160,
+        has_more: true
+      }
+    };
+
+    expect(component.getDocumentsSummary(message)).toBe('Showing 1 relevant results');
+    expect(component.getLoadMoreLabel(message)).toBe('Load More');
   });
 });

@@ -102,9 +102,7 @@
                    class="documents-summary">
                 <div class="documents-header">
                   <i class="fas fa-file-alt"></i>
-                  <strong>
-                    Showing {{ message.documents.length }} of {{ formatTotalResults(message) }} document(s)
-                  </strong>
+                  <strong>{{ getDocumentsSummary(message) }}</strong>
                 </div>
                 
                 <div class="documents-list">
@@ -153,7 +151,7 @@
                           [disabled]="message.loadingMore">
                     <span *ngIf="!message.loadingMore">
                       <i class="fas fa-plus-circle"></i>
-                      Load More ({{ message.numDocsFound - message.documents.length }} remaining)
+                      {{ getLoadMoreLabel(message) }}
                     </span>
                     <span *ngIf="message.loadingMore">
                       <i class="fas fa-spinner fa-spin"></i>

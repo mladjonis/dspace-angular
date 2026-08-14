@@ -169,7 +169,7 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
       citations: response.citations,
       numDocsFound: response.pagination?.total_results ?? response.num_docs_found,
       pagination: response.pagination,
-      originalQuery,
+      originalQuery: response.query || originalQuery,
       noAnswer: response.no_answer === true
     };
     this.messages.push(botMessage);
@@ -219,8 +219,16 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response) => {
-          message.documents = [...(message.documents || []), ...response.documents];
+          const documentsById = new Map<string, DocumentResult>();
+          [...(message.documents || []), ...response.documents].forEach((document) => {
+            if (!documentsById.has(document.solr_id)) {
+              documentsById.set(document.solr_id, document);
+            }
+          });
+
+          message.documents = Array.from(documentsById.values());
           message.pagination = response.pagination;
+          message.numDocsFound = response.pagination?.total_results ?? response.num_docs_found;
           message.loadingMore = false;
           this.shouldScrollToBottom = true;
           this.cdr.detectChanges();
@@ -310,12 +318,25 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
     return value !== 'N/A' ? value : null;
   }
 
-  formatTotalResults(message: ChatMessage): string {
-    const total = message.numDocsFound ?? 0;
-    if (message.pagination?.total_results_is_approximate) {
-      return `~${total}`;
+  getDocumentsSummary(message: ChatMessage): string {
+    const shown = message.documents?.length ?? 0;
+    if (message.pagination?.total_results_is_approximate !== false) {
+      return `Showing ${shown} relevant results`;
     }
-    return String(total);
+
+    const total = Math.max(shown, message.pagination.total_results);
+    return `Showing ${shown} of ${total} results`;
+  }
+
+  getLoadMoreLabel(message: ChatMessage): string {
+    if (message.pagination?.total_results_is_approximate !== false) {
+      return 'Load More';
+    }
+
+    const shown = message.documents?.length ?? 0;
+    const total = Math.max(shown, message.pagination.total_results);
+    const remaining = Math.max(0, total - shown);
+    return `Load More (${remaining} remaining)`;
   }
 
   formatTimestamp(timestamp: Date): string {
