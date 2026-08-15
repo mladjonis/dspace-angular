@@ -219,6 +219,19 @@ export class RagChatbotComponent implements OnInit, OnDestroy, AfterViewChecked 
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response) => {
+          if (response.no_answer === true) {
+            message.loadingMore = false;
+            message.loadMoreNotice = response.response ||
+              'No more sufficiently relevant results.';
+            message.pagination = {
+              ...message.pagination!,
+              has_more: false
+            };
+            this.shouldScrollToBottom = true;
+            this.cdr.detectChanges();
+            return;
+          }
+
           const documentsById = new Map<string, DocumentResult>();
           [...(message.documents || []), ...response.documents].forEach((document) => {
             if (!documentsById.has(document.solr_id)) {

@@ -60,7 +60,11 @@
 
               <div *ngIf="!message.loading" [innerHTML]="message.content | safe:'html'" class="message-text"></div>
 
-              <div *ngIf="message.noAnswer && !message.loading" class="no-answer-hint">
+              <div *ngIf="message.noAnswer &&
+                          !message.loading &&
+                          message.documents &&
+                          message.documents.length > 0"
+                   class="no-answer-hint">
                 <small>
                   <i class="fas fa-info-circle"></i>
                   Low confidence match — results may not fully answer your question.
@@ -158,6 +162,13 @@
                       Loading...
                     </span>
                   </button>
+                </div>
+
+                <div *ngIf="message.loadMoreNotice" class="load-more-notice" role="status">
+                  <small>
+                    <i class="fas fa-info-circle"></i>
+                    {{ message.loadMoreNotice }}
+                  </small>
                 </div>
               </div>
             </div>

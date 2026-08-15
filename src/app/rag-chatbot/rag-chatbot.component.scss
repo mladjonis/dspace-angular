@@ -327,6 +327,14 @@
   border-top: 1px dashed #e0e0e0;
 }
 
+.load-more-notice {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed #e0e0e0;
+  color: #666;
+  text-align: center;
+}
+
 .load-more-btn {
   display: flex;
   align-items: center;
@@ -548,4 +556,3 @@
     margin-right: 0.5rem;
   }
 }
-

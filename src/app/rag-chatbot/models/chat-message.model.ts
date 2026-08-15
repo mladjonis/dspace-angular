@@ -25,6 +25,8 @@ export interface ChatMessage {
 
   loadingMore?: boolean;
 
+  loadMoreNotice?: string;
+
   noAnswer?: boolean;
 
   isWelcome?: boolean;

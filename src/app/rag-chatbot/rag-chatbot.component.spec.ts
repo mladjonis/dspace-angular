@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { of, throwError } from 'rxjs';
 import { RagChatbotComponent } from './rag-chatbot.component';
 import { RagChatbotService } from './services/rag-chatbot.service';
+import { ChatMessage } from './models/chat-message.model';
 import { SafePipe } from './pipes/safe.pipe';
 
 describe('RagChatbotComponent', () => {
@@ -119,6 +120,49 @@ describe('RagChatbotComponent', () => {
     const botMessage = component.messages[component.messages.length - 1];
     expect(botMessage.citations?.length).toBe(1);
     expect(botMessage.noAnswer).toBe(false);
+  });
+
+  it('should not show a low-confidence hint when no documents were found', () => {
+    mockRagChatbotService.chatWithHistory.and.returnValue(of({
+      ...mockResponse,
+      response: 'No documents found.',
+      documents: [],
+      citations: [],
+      no_answer: true,
+      num_docs_found: 0,
+      pagination: {
+        ...mockResponse.pagination,
+        total_results: 0
+      }
+    }));
+    mockRagChatbotService.healthCheck.and.returnValue(
+      of({ status: 'healthy', service: 'RAG Chatbot' })
+    );
+
+    fixture.detectChanges();
+    component.userInput = 'missing document';
+    component.sendMessage();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.no-answer-hint')).toBeNull();
+  });
+
+  it('should show a low-confidence hint when candidate documents exist', () => {
+    mockRagChatbotService.chatWithHistory.and.returnValue(of({
+      ...mockResponse,
+      response: 'These documents may not fully answer the query.',
+      no_answer: true
+    }));
+    mockRagChatbotService.healthCheck.and.returnValue(
+      of({ status: 'healthy', service: 'RAG Chatbot' })
+    );
+
+    fixture.detectChanges();
+    component.userInput = 'weak match';
+    component.sendMessage();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.no-answer-hint')).not.toBeNull();
   });
 
   it('should retain the backend standalone query for loading later pages', () => {
@@ -298,6 +342,69 @@ describe('RagChatbotComponent', () => {
     expect(message.pagination?.has_more).toBe(true);
     expect(message.numDocsFound).toBe(3);
     expect(message.loadingMore).toBe(false);
+  });
+
+  it('should stop without appending documents when Load More is refused', () => {
+    mockRagChatbotService.healthCheck.and.returnValue(
+      of({ status: 'healthy', service: 'RAG Chatbot' })
+    );
+    mockRagChatbotService.chatWithHistory.and.returnValue(of({
+      ...mockResponse,
+      response: 'No more sufficiently relevant results.',
+      documents: [{
+        content: 'weak tail content',
+        metadata: { dc_title: 'Unrelated Paper' },
+        similarity_score: 0.3,
+        solr_id: 'Item-weak'
+      }],
+      no_answer: true,
+      pagination: {
+        page: 2,
+        page_size: 10,
+        total_results: 30,
+        has_more: true,
+        total_results_is_approximate: true
+      }
+    }));
+
+    fixture.detectChanges();
+
+    const message: ChatMessage = {
+      id: 'bot-1',
+      content: 'Grounded answer',
+      type: 'bot',
+      timestamp: new Date(),
+      originalQuery: 'exact title',
+      documents: mockResponse.documents,
+      citations: mockResponse.citations,
+      noAnswer: false,
+      numDocsFound: 30,
+      loadingMore: false,
+      pagination: {
+        page: 1,
+        page_size: 10,
+        total_results: 30,
+        has_more: true,
+        total_results_is_approximate: true
+      }
+    };
+    component.messages = [message];
+
+    component.loadMoreDocuments(message);
+    fixture.detectChanges();
+
+    expect(message.documents?.map(document => document.solr_id)).toEqual(['Item-abc']);
+    expect(message.content).toBe('Grounded answer');
+    expect(message.citations).toEqual(mockResponse.citations);
+    expect(message.noAnswer).toBe(false);
+    expect(message.pagination?.page).toBe(1);
+    expect(message.pagination?.has_more).toBe(false);
+    expect(message.numDocsFound).toBe(30);
+    expect(message.loadingMore).toBe(false);
+    expect(message.loadMoreNotice).toBe('No more sufficiently relevant results.');
+    expect(fixture.nativeElement.querySelector('.load-more-notice')?.textContent)
+      .toContain('No more sufficiently relevant results.');
+    expect(fixture.nativeElement.querySelector('.load-more-btn')).toBeNull();
   });
 
   it('should clear loadingMore when loading another page fails', () => {
